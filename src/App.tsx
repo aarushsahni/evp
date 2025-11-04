@@ -125,7 +125,7 @@ function App() {
               <p className="text-slate-600 max-w-lg mx-auto">
                 This tool provides evidence-based clinical guidance for
                 urologists managing patients receiving Enfortumab Vedotin +
-                Pembrolizumab therapy. Ask questions about dosing, efficacy,
+                Pembrolizumab therapweqwe y. Ask questions about dosing, efficacy,
                 safety, or trial data.
               </p>
             </div>
