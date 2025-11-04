@@ -62,62 +62,75 @@ export class OpenAIService {
 
     this.client = new OpenAI({
       apiKey,
-      dangerouslyAllowBrowser: true, // fine for testing
+      dangerouslyAllowBrowser: true,
     });
     this.assistantId = assistantId;
   }
 
   async askQuestion(question: string): Promise<string> {
-    // 1️⃣ Create thread
-    const thread = await this.client.beta.threads.create({});
-    const threadId = thread.id;
-
-    // 2️⃣ Add user message
-    await this.client.beta.threads.messages.create({
-      thread_id: threadId,
-      role: "user",
-      content: question,
-    });
-
-    // 3️⃣ Create run with assistant
-    const run = await this.client.beta.threads.runs.create({
-      thread_id: threadId,
-      assistant_id: this.assistantId,
-      instructions: SYSTEM_PROMPT,
-    });
-
-    // 4️⃣ Poll until completion
-    let runStatus = await this.client.beta.threads.runs.retrieve({
-      thread_id: threadId,
-      run_id: run.id,
-    });
-
-    while (runStatus.status !== "completed") {
-      if (["failed", "cancelled", "expired"].includes(runStatus.status)) {
-        throw new Error(`Run ended with status: ${runStatus.status}`);
+    try {
+      // 1️⃣ Create thread
+      const thread = await this.client.beta.threads.create();
+      
+      if (!thread?.id) {
+        throw new Error("Failed to create thread: no ID returned");
       }
-      await new Promise((r) => setTimeout(r, 1000));
-      runStatus = await this.client.beta.threads.runs.retrieve({
-        thread_id: threadId,
-        run_id: run.id,
+      
+      const threadId = String(thread.id);
+
+      // 2️⃣ Add user message
+      await this.client.beta.threads.messages.create(threadId, {
+        role: "user",
+        content: question,
       });
+
+      // 3️⃣ Create run with assistant
+      const run = await this.client.beta.threads.runs.create(threadId, {
+        assistant_id: this.assistantId,
+        instructions: SYSTEM_PROMPT,
+      });
+
+      if (!run?.id) {
+        throw new Error("Failed to create run: no ID returned");
+      }
+
+      // 4️⃣ Poll until completion
+      let runStatus = await this.client.beta.threads.runs.retrieve(
+        threadId,
+        String(run.id)
+      );
+
+      while (runStatus.status !== "completed") {
+        if (["failed", "cancelled", "expired"].includes(runStatus.status)) {
+          throw new Error(`Run ended with status: ${runStatus.status}`);
+        }
+        await new Promise((r) => setTimeout(r, 1000));
+        runStatus = await this.client.beta.threads.runs.retrieve(
+          threadId,
+          String(run.id)
+        );
+      }
+
+      // 5️⃣ Get messages and return assistant reply
+      const messages = await this.client.beta.threads.messages.list(threadId);
+
+      const assistantMessage = messages.data.find((m) => m.role === "assistant");
+
+      if (
+        assistantMessage &&
+        assistantMessage.content.length > 0 &&
+        assistantMessage.content[0].type === "text"
+      ) {
+        return assistantMessage.content[0].text.value;
+      }
+
+      throw new Error("Unexpected response format — no text message found");
+    } catch (error) {
+      console.error("OpenAI API Error:", error);
+      if (error instanceof Error) {
+        throw new Error(`OpenAI API Error: ${error.message}`);
+      }
+      throw new Error("An unexpected error occurred while communicating with OpenAI");
     }
-
-    // 5️⃣ Get messages and return assistant reply
-    const messages = await this.client.beta.threads.messages.list({
-      thread_id: threadId,
-    });
-
-    const assistantMessage = messages.data.find((m) => m.role === "assistant");
-
-    if (
-      assistantMessage &&
-      assistantMessage.content.length > 0 &&
-      assistantMessage.content[0].type === "text"
-    ) {
-      return assistantMessage.content[0].text.value;
-    }
-
-    throw new Error("Unexpected response format — no text message found");
   }
 }
